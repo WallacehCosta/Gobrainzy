@@ -14,18 +14,17 @@ import MentalMap from './MentalMap';
 // --- CONFIGURAÇÕES E VARIÁVEIS GLOBAIS (FORNECIDAS PELO AMBIENTE) ---
 const appId = "edu-ia-app";
 const firebaseConfig = {
-
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: "ai-estudantil.appspot.com",
-  messagingSenderId: "949660718945",
-  appId: "1:949660718945:web:ad05fcfcec18997f5f9720",
-  measurementId: "G-B31BZDVF2X"
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 const initialAuthToken = null;
-const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY; 
 
 // --- CONSTANTES DO APP ---
 const FREE_USER_LIMIT = 5; // Limite de pesquisas para usuários gratuitos
