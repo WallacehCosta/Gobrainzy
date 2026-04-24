@@ -15,9 +15,9 @@ import MentalMap from './MentalMap';
 const appId = "edu-ia-app";
 const firebaseConfig = {
 
-  apiKey: "AIzaSyAJAAPjChlSK33oxlVX7Xu8BIgGeCaMdBQ",
-  authDomain: "ai-estudantil.firebaseapp.com",
-  projectId: "ai-estudantil",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
   storageBucket: "ai-estudantil.appspot.com",
   messagingSenderId: "949660718945",
   appId: "1:949660718945:web:ad05fcfcec18997f5f9720",
@@ -25,7 +25,7 @@ const firebaseConfig = {
 };
 
 const initialAuthToken = null;
-const API_KEY = "AIzaSyAv07meyWS_nrFLnA4ZvQV8nke4QttBquw"; 
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
 // --- CONSTANTES DO APP ---
 const FREE_USER_LIMIT = 5; // Limite de pesquisas para usuários gratuitos
