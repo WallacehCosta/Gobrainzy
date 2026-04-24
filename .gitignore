@@ -7,10 +7,23 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies
 node_modules
+
+# Build outputs
 dist
 dist-ssr
-*.local
+web-build
+
+# Environment variables (NEVER commit these)
+.env
+.env.local
+.env.development
+.env.production
+
+# Firebase
+.firebase/
+firebase-debug.log*
 
 # Editor directories and files
 .vscode/*
@@ -22,9 +35,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Mobile / Expo / Capacitor
 .expo/
 *.jks
 *.keystore
 /android/
 /ios/
-/web-build/
+
+# Misc
+*.local
+backup.jsx
+mainapp.jsx

@@ -1,4 +1,4 @@
-/* global __app_id, __firebase_config, __initial_auth_token, katex */
+/* global katex */
 /* eslint-disable no-unused-vars */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -10,7 +10,6 @@ import { Loader2, Zap, BookOpen, User, LogOut, MessageSquare, Award, Lock, Brain
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import './index.css';
 import MentalMap from './MentalMap';
-
 
 // --- CONFIGURAÇÕES E VARIÁVEIS GLOBAIS (FORNECIDAS PELO AMBIENTE) ---
 const appId = "edu-ia-app";
@@ -30,10 +29,17 @@ const API_KEY = "AIzaSyAv07meyWS_nrFLnA4ZvQV8nke4QttBquw";
 
 // --- CONSTANTES DO APP ---
 const FREE_USER_LIMIT = 5; // Limite de pesquisas para usuários gratuitos
+
 // PONTUAÇÕES AJUSTADAS PARA QUIZ
 const POINTS_PER_CORRECT_ANSWER = 15; // Pontos ganhos por acerto no quiz
 const POINTS_PER_WRONG_ANSWER = -5;  // Pontos perdidos por erro no quiz
 const POINTS_PER_SEARCH_ACTIVITY = 1; // 1 ponto por atividade de pesquisa
+
+// Inicializa Firebase FORA do componente — acontece imediatamente ao carregar o JS
+const _firebaseApp = initializeApp(firebaseConfig);
+const _firebaseAuth = getAuth(_firebaseApp);
+const _firebaseDb = getFirestore(_firebaseApp);
+
 const PREMIUM_ICON = <Zap className="w-4 h-4 text-yellow-400" />;
 
 // Avatars e Recompensas (Gamificação)
@@ -345,6 +351,7 @@ const AuthScreen = ({ auth, setAuthReady }) => {
                   err.code.includes('auth/email-already-in-use') ? 'Este email já está em uso.' :
                   err.code.includes('auth/invalid-credential') ? 'Credenciais inválidas. Verifique seu email e senha.' :
                   'Erro de autenticação. Tente novamente.';
+    setError(msg);
   } finally {
     setIsAuthLoading(false);
   }
@@ -700,15 +707,15 @@ const ChatMessage = ({ message, messageIndex, updateProfile, userProfile, genera
                 <p className="font-semibold text-indigo-700">Tutor IA:</p>
                 
                 {/* Renderização de Texto Matemático (KaTeX) */}
-                <MathRenderer content={message.text} />
+                <MathRenderer content={message.text || ""} />
                 
                 {/* --- SEÇÃO DO QUIZ INTERATIVO --- */}
                 {suggestions?.quizzes && suggestions.quizzes.length > 0 && (
-                    <InteractiveQuiz 
-                        message={message}
+                    <PersistentQuiz
+                        quizzes={suggestions.quizzes}
                         messageIndex={messageIndex}
-                        updateProfile={updateProfile}
                         userProfile={userProfile}
+                        updateProfile={updateProfile}
                     />
                 )}
 
@@ -720,11 +727,6 @@ const ChatMessage = ({ message, messageIndex, updateProfile, userProfile, genera
 </h4>
 
                         <div className="grid sm:grid-cols-2 gap-4">                           
-                            
-                            {/* Card: Drag and Drop Game (se houver) */}
-                            {suggestions.dragAndDropTopic && (
-                                <DragAndDropGame topic={suggestions.dragAndDropTopic} />
-                            )}
 
                             {/* Card: Vídeo (Com Grounding do YouTube) */}
                             {suggestions.videoData ? (
@@ -736,14 +738,15 @@ const ChatMessage = ({ message, messageIndex, updateProfile, userProfile, genera
                                         {suggestions.videoData.thumbnailUrl && (
                                             <div className="flex-shrink-0 w-full sm:w-1/4 aspect-video bg-gray-200 rounded-lg overflow-hidden">
                                                 <img 
-                                                    src={suggestions.videoData.thumbnailUrl} 
-                                                    alt="Thumbnail do YouTube" 
-                                                    className="w-full h-full object-cover"
-                                                    onError={(e) => { 
-                                                        e.target.onerror = null; 
-                                                        e.target.src = 'https://s.ytimg.com/yts/img/favicon_144-vfliLAfaB.png'; 
-                                                    }}
-                                                />
+  src={suggestions.videoData.thumbnailUrl} 
+  alt="Thumbnail do YouTube" 
+  // CLASSE CORRIGIDA: Define 160px x 96px em mobile e ocupa 100% do container em desktop
+  className="w-40 h-24 sm:w-60 sm:h-36 md:w-full md:h-full object-cover" 
+  onError={(e) => { 
+    e.target.onerror = null; 
+    e.target.src = 'https://s.ytimg.com/yts/img/favicon_144-vfliLAfaB.png'; 
+  }}
+/>
                                             </div>
                                         )}
                                         <div className="flex-grow">
@@ -835,7 +838,7 @@ const generateMentalMap = async (topic, messageIndex) => {
       contents: [{ parts: [{ text: prompt }] }],
     };
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${API_KEY}`;
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
     
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -865,23 +868,26 @@ const generateMentalMap = async (topic, messageIndex) => {
     });
 
     // 2. Persistência no Firebase (para o mapa não sumir ao recarregar)
-    const updatedHistory = [...chatHistory];
-    if (updatedHistory[messageIndex]) {
-        updatedHistory[messageIndex].suggestions = {
-            ...updatedHistory[messageIndex].suggestions,
-            mentalMapData: mentalMapData
-        };
-        
-        // Atualiza a sessão atual
-        const updatedSessions = userProfile.chatSessions.map(session => {
-            if (session.id === userProfile.currentSessionId) {
-                return { ...session, chatHistory: updatedHistory };
-            }
-            return session;
-        });
+    const currentSess = userProfile?.chatSessions?.find(
+    s => s.id === userProfile.currentSessionId
+);
+const updatedHistory = [...(currentSess?.chatHistory || [])];
 
-        await updateProfile({ chatSessions: updatedSessions });
-    }
+if (updatedHistory[messageIndex]) {
+    updatedHistory[messageIndex].suggestions = {
+        ...updatedHistory[messageIndex].suggestions,
+        mentalMapData: mentalMapData
+    };
+
+    const updatedSessions = userProfile.chatSessions.map(session => {
+        if (session.id === userProfile.currentSessionId) {
+            return { ...session, chatHistory: updatedHistory };
+        }
+        return session;
+    });
+
+    await updateProfile({ chatSessions: updatedSessions });
+}
 
   } catch (error) {
     console.error('Erro ao gerar mapa mental:', error);
@@ -931,7 +937,7 @@ Título:`;
         contents: [{ parts: [{ text: prompt }] }],
       };
 
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${API_KEY}`;
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
 
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -963,7 +969,7 @@ Título:`;
       },
     };
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
 
     try {
       const apiResponse = await fetchWithRetry(apiUrl, {
@@ -974,8 +980,11 @@ Título:`;
 
       const groundingMetadata = apiResponse.candidates?.[0]?.groundingMetadata;
 
-      if (groundingMetadata && groundingMetadata.groundingAttributions) {
-        const firstYoutube = groundingMetadata.groundingAttributions.find(attr => 
+      const attributions = groundingMetadata?.groundingAttributions ||
+                           groundingMetadata?.groundingChunks?.map(c => ({ web: c.web })) || [];
+
+      if (groundingMetadata && attributions.length > 0) {
+        const firstYoutube = attributions.find(attr => 
           attr.web?.uri && attr.web.uri.includes('youtube.com/watch')
         );
 
@@ -1045,7 +1054,7 @@ Título:`;
       .slice(-contextLimit)
       .map(msg => ({
         role: msg.role === 'user' ? 'user' : 'model',
-        parts: [{ text: msg.role === 'user' ? msg.text : msg.text + (msg.suggestions ? JSON.stringify(msg.suggestions) : '') }]
+        parts: [{ text: msg.text }]
       }));
 
     const userQuery = `Pergunta do usuário: "${currentQuery}". Responda a pergunta. Em seguida, gere CINCO itens de QUIZ de múltipla escolha com 4 opções CADA, UM nome para a MATÉRIA PRINCIPAL, e UM assunto para VÍDEO CURTO, todos relacionados à resposta. O output deve ser APENAS um JSON válido.`;
@@ -1054,9 +1063,12 @@ Título:`;
 
     const payload = {
       contents: [
-        ...apiContext,
-        { parts: [{ text: userQuery }] }
-      ],
+  ...apiContext,
+  {
+    parts: [{ text: userQuery }]
+  }
+],
+
       systemInstruction: { parts: [{ text: systemInstruction }] },
       generationConfig: {
         responseMimeType: "application/json",
@@ -1092,7 +1104,8 @@ Título:`;
       }
     };
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
+    
     const apiResponse = await fetchWithRetry(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1110,13 +1123,37 @@ Título:`;
       throw new Error("A IA não retornou texto útil.");
     }
 
-    let parsedData;
-    try {
-      parsedData = JSON.parse(rawText);
-    } catch (err) {
-      console.error("Erro ao converter a resposta em JSON:", rawText);
-      throw new Error("A resposta da IA não está no formato JSON esperado.");
+    let parsedData = null;
+
+try {
+  parsedData = JSON.parse(rawText);
+} catch (err) {
+  try {
+    const cleaned = rawText
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
+
+    const match =
+      cleaned.match(/\{[\s\S]*\}$/m) ||
+      cleaned.match(/\{[\s\S]*?\}/m);
+
+    if (match) {
+      parsedData = JSON.parse(match[0]);
+    } else {
+      throw err;
     }
+  } catch (err2) {
+    console.error("JSON parse failed:", err2, rawText);
+    showModal(
+      "Erro da IA",
+      "A resposta da IA veio em formato inesperado. Tente novamente."
+    );
+    setLocalChatHistory(prev => prev);
+    setIsAIThinking(false);
+    return;
+  }
+}
 
     const suggestions = parsedData.learningSuggestions;
 
@@ -1164,13 +1201,15 @@ Título:`;
     // prepare server-side persistence
     const updatedHistoryAfterAI = [...updatedHistoryAfterUser, aiResponse];
 
+    const MAX_HISTORY = 20; // limite de mensagens por sessão
     const updatedSessions = userProfile.chatSessions.map(session => {
       if (session.id === userProfile.currentSessionId) {
+        const trimmedHistory = updatedHistoryAfterAI.slice(-MAX_HISTORY);
         return {
           ...session,
           title: sessionTitle || session.title,
-          chatHistory: updatedHistoryAfterAI,
-          messageCount: updatedHistoryAfterAI.length,
+          chatHistory: trimmedHistory,
+          messageCount: trimmedHistory.length,
           updatedAt: new Date().toISOString()
         };
       }
@@ -1197,7 +1236,7 @@ Título:`;
       console.error('Erro ao salvar resposta no servidor:', persistErr);
 
       // rollback optimistic AI message and user message
-      setLocalChatHistory(chatHistory); // Roll back to the state before the current interaction
+      setLocalChatHistory(prev => prev); // Roll back to the state before the current interaction
 
       showModal('Erro na IA', 'Não foi possível salvar a resposta. Tente novamente.');
     } 
@@ -1206,7 +1245,7 @@ Título:`;
     console.error('Erro inesperado no handleAISearch:', err);
 
     // Rollback: Reverte para o histórico anterior à falha
-    setLocalChatHistory(chatHistory);
+    setLocalChatHistory(prev => prev);
 
     showModal('Erro na IA', 'Não foi possível salvar a resposta. Tente novamente.');
     
@@ -1215,7 +1254,6 @@ Título:`;
     setIsAIThinking(false);
 }
 };
-
 
   // Efeito para rolar o chat para baixo
   useEffect(() => {
@@ -1303,9 +1341,9 @@ Título:`;
             onChange={(e) => setQuery(e.target.value)}
             rows="2"
             className="w-full p-3 border border-gray-300 rounded-xl resize-none focus:ring-2 focus:ring-indigo-500 transition-shadow shadow-sm"
-            disabled={isLoading || !isSearchAllowed}
+            disabled={isAIThinking || !isSearchAllowed}
           />
-          <Button onClick={handleAISearch} disabled={isLoading || !isSearchAllowed || !query}>
+          <Button onClick={handleAISearch} disabled={isAIThinking || !isSearchAllowed || !query}>
             {isLoading ? <Loader2 className="w-6 h-6 animate-spin mx-auto" /> : 'Perguntar à IA'}
           </Button>
         </form>
@@ -1613,8 +1651,7 @@ const SidebarMenu = ({
   activeTab, 
   setActiveTab, 
   userProfile, 
-  updateProfile,
-  setCurrentSessionId 
+  updateProfile
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -1878,12 +1915,13 @@ const MainAppScreen = ({ auth, db, userId, userProfile, updateProfile }) => {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-gray-100 overflow-hidden">
-      {/* Header Fixo */}
-      <header
-  className="shadow-md p-4 flex items-center justify-between sticky top-0 z-30"
+  <div className="h-screen flex flex-col bg-gray-100 overflow-hidden">
+    {/* Header Fixo Corrigido */}
+    <header
+  className="shadow-md p-4 flex items-center justify-between sticky top-0 left-0 w-full z-10"
   style={{ backgroundColor: "#fad45c" }}
 >
+
   <div className="flex items-center">
     <button
       onClick={() => setIsSidebarOpen(true)}
@@ -1895,7 +1933,6 @@ const MainAppScreen = ({ auth, db, userId, userProfile, updateProfile }) => {
       </svg>
     </button>
 
-    {/* LOGO ADICIONADA AQUI */}
     <img
       src="/LOGO-GB-VETOR.svg"           
       alt="Logo-gb"
@@ -1955,49 +1992,30 @@ const MainAppScreen = ({ auth, db, userId, userProfile, updateProfile }) => {
   );
 };
 
-
 // 7. Componente Raiz (Gerencia Firebase e Estado Global)
 const App = () => {
-  const [app, setApp] = useState(null);
-  const [db, setDb] = useState(null);
-  const [auth, setAuth] = useState(null);
+  const [app] = useState(_firebaseApp);
+  const [db] = useState(_firebaseDb);
+  const [auth] = useState(_firebaseAuth);
   const [user, setUser] = useState(null); // Objeto de usuário do Firebase Auth
   const [userId, setUserId] = useState(null); // ID do usuário ou anônimo
   const [userProfile, setUserProfile] = useState(null); // Perfil do Firestore
   const [authReady, setAuthReady] = useState(false);
   const [isProfileLoading, setIsProfileLoading] = useState(true);
 
-  // 7.1. Inicialização do Firebase e Autenticação
-  useEffect(() => {
-    if (Object.keys(firebaseConfig).length === 0) {
-      console.error("Configuração do Firebase não encontrada. O aplicativo não funcionará corretamente.");
-      return;
+ useEffect(() => {
+  const unsubscribe = onAuthStateChanged(_firebaseAuth, (currentUser) => {
+    setUser(currentUser);
+    if (currentUser) {
+      setUserId(currentUser.uid);
+    } else {
+      setUserId(null);
+      setUserProfile(null);
     }
-
-    const appInstance = initializeApp(firebaseConfig);
-    const authInstance = getAuth(appInstance);
-    const dbInstance = getFirestore(appInstance);
-
-    setApp(appInstance);
-    setAuth(authInstance);
-    setDb(dbInstance);
-
-    // Listener de estado de autenticação
-    const unsubscribe = onAuthStateChanged(authInstance, (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        // Usa o UID real para usuários logados/criados
-        setUserId(currentUser.uid);
-      } else {
-        // Se deslogado, volta para a tela de Auth
-        setUserId(null);
-        setUserProfile(null);
-      }
-      setAuthReady(true);
-    });
-
-    return () => unsubscribe();
-  }, []);
+    setAuthReady(true);
+  });
+  return () => unsubscribe();
+}, []);
 
   // 7.2. Lógica de Perfil (Firestore)
   useEffect(() => {
@@ -2010,7 +2028,7 @@ const App = () => {
     const timeoutId = setTimeout(() => {
       console.log("Timeout no carregamento do perfil");
       setIsProfileLoading(false);
-    }, 8000); // 8 segundos máximo
+    }, 3000);
 
     const unsubscribeProfile = onSnapshot(profileRef, 
       (docSnapshot) => {
@@ -2029,6 +2047,7 @@ const App = () => {
   createdAt: new Date().toISOString(),
   userId: userId,
   userEmail: user?.email || null,
+  
   // NOVA ESTRUTURA DE SESSÕES
   chatSessions: [
     {
@@ -2063,23 +2082,21 @@ const App = () => {
       unsubscribeProfile();
     };
   }
-}, [db, userId]);
+}, [db, userId, user?.email]);
 
-  // Função para atualizar o perfil no Firestore
-
+// Função para atualizar o perfil no Firestore
 const updateProfile = useCallback(async (updates) => {
   if (!db || !userId) return;
   const profilePath = `/artifacts/${appId}/users/${userId}/data/userProfile`;
   const profileRef = doc(db, profilePath);
   
   try {
-    // Para campos numéricos que precisam de incremento, usar FieldValue.increment
     await updateDoc(profileRef, updates);
   } catch (e) {
     console.error("Erro ao atualizar perfil:", e);
+    throw e;
   }
 }, [db, userId]);
-
 
   if (!authReady || !auth) {
     // Mostra tela de carregamento ou inicia a autenticação
