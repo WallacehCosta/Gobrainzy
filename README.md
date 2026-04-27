@@ -2,6 +2,8 @@
 
 GOBRAINZY is a web application that uses Google's Gemini AI to help students learn more effectively. Users can ask questions on any subject and receive structured answers, interactive quizzes, mental maps, and YouTube video suggestions — all in one place.
 
+![Previa-Gobrainzy](public/web-app-gobrainzy.png)
+
 ## Features
 
 - **AI Chat** — Ask any question and get a detailed answer powered by Gemini AI
